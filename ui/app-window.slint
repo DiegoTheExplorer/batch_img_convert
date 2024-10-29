@@ -1,0 +1,43 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    // Variables shared between front and back end
+    in-out property <string> inp_dir;
+    in-out property <string> out_dir;
+
+    // Backend function calls
+    callback select-dir(int);
+    callback to-jpeg(string, string);
+
+    // GUI markup
+    VerticalBox {
+        Text {
+            text: "Current input folder: \{root.inp_dir}";
+        }
+
+        Button {
+            text: "Select input folder";
+            clicked => {
+                root.select-dir(0);
+            }
+        }
+
+        Text {
+            text: "Current output folder: \{root.out_dir}";
+        }
+
+        Button {
+            text: "Select output folder";
+            clicked => {
+                root.select-dir(1);
+            }
+        }
+
+        Button {
+            text: "Convert images to jpeg";
+            clicked => {
+                root.to-jpeg(inp_dir, out_dir);
+            }
+        }
+    }
+}
