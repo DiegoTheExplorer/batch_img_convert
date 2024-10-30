@@ -1,17 +1,17 @@
 // Prevent console window in addition to Slint window in Windows release builds when, e.g., starting the app via file manager. Ignored on other platforms.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::error::Error;
-use std::ffi::OsString;
-use std::fmt;
-use std::fs::{read_dir, File, ReadDir};
-use std::io::BufWriter;
-use std::path::Path;
-
 use native_dialog::FileDialog;
+use std::{
+    error::Error,
+    ffi::OsString,
+    fmt,
+    fs::{read_dir, File, ReadDir},
+    io::{BufReader, BufWriter},
+    path::Path,
+};
 slint::include_modules!();
-use image::codecs::jpeg::JpegEncoder;
-use image::{ColorType, DynamicImage, ImageReader};
+use image::{codecs::jpeg::JpegEncoder, ColorType, DynamicImage, ImageReader};
 use slint::{ComponentHandle, Weak};
 
 #[derive(Debug)]
@@ -111,10 +111,9 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
                 continue;
             }
         };
-        println!("path_str = {}", path_str);
 
         // Create an image decoder from the file opened at path_str
-        let img_reader = match ImageReader::open(path_str) {
+        let img_reader = match ImageReader::open(path_str.clone()) {
             Ok(res) => res,
             Err(err) => {
                 // TODO: Add logging for ImageReader errors
@@ -123,12 +122,20 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
             }
         };
 
+        // WARNING: This covers the case where the img file extension
+        // does not match the file type
+        let img_reader: ImageReader<BufReader<File>> = match img_reader.with_guessed_format() {
+            Ok(img_reader) => img_reader,
+            Err(_) => continue,
+        };
+
         // Decode img from image_reader
         let img: DynamicImage = match img_reader.decode() {
             Ok(res) => res.into(),
             Err(err) => {
                 // TODO: Add logging for image decoding errors
-                println!("Error while decoding to DynamicImage{}", err);
+                println!("Error while decoding to DynamicImage: {}", err);
+                println!("  Current file: {}", path_str);
                 continue;
             }
         };
@@ -157,12 +164,11 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
                 continue;
             }
         };
-        println!("out_path: {}", out_path);
 
         let out_file = match File::create(out_path) {
             Ok(out_file) => out_file,
             Err(err) => {
-                println!("{}", err);
+                println!("Error while creating output file: {}", err);
                 // TODO: Handle file creation errors
                 continue;
             }
@@ -171,7 +177,7 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
         // Create a BufWriter
         let ref mut file_writer = BufWriter::new(out_file);
 
-        // Create a JPEG decoder
+        // Create a JPEG encoder
         let mut img_encoder = JpegEncoder::new(file_writer);
         // Encode image to JPEG and handle encode errors
         match img_encoder.encode(
@@ -182,7 +188,7 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
         ) {
             Ok(()) => (),
             Err(err) => {
-                println!("{}", err);
+                println!("Error while encoding image to jpeg: {}", err);
                 continue;
             }
         };
