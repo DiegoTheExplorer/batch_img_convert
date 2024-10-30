@@ -1,12 +1,33 @@
 // Prevent console window in addition to Slint window in Windows release builds when, e.g., starting the app via file manager. Ignored on other platforms.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use native_dialog::FileDialog;
 use std::error::Error;
-use std::fs;
+use std::ffi::OsString;
+use std::fmt;
+use std::fs::{read_dir, File, ReadDir};
+use std::io::BufWriter;
+use std::path::Path;
 
+use native_dialog::FileDialog;
 slint::include_modules!();
-use slint::{ComponentHandle, SharedString, Weak};
+use image::codecs::jpeg::JpegEncoder;
+use image::{ColorType, DynamicImage, ImageReader};
+use slint::{ComponentHandle, Weak};
+
+#[derive(Debug)]
+enum ConvertToJpegError {
+    InputDirectoryInvalid(std::io::Error),
+}
+
+impl fmt::Display for ConvertToJpegError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConvertToJpegError::InputDirectoryInvalid(err) => write!(f, "Directory Error: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for ConvertToJpegError {}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
@@ -39,7 +60,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Input Directory: {}", inp_dir);
             println!("Output Directory: {}", out_dir);
 
-            get_files_paths(inp_dir.to_string());
+            let paths = match get_files_paths(inp_dir.to_string()) {
+                Ok(paths) => paths,
+                Err(_) => {
+                    // TODO: Add gui output for the io error
+                    return;
+                }
+            };
+
+            convert_imgs_to_jpeg(paths, out_dir.to_string());
         },
     );
     ui.run()?;
@@ -47,10 +76,115 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_files_paths(dir: String) {
-    let paths = fs::read_dir(dir).unwrap();
+fn get_files_paths(dir: String) -> Result<ReadDir, crate::ConvertToJpegError> {
+    let paths = match read_dir(dir) {
+        Ok(paths) => paths,
+        Err(err) => {
+            // TODO: Log and display error that there
+            // was an error with the input directory
+            println!(
+                "Error with reading the dir while getting file paths: {}",
+                err
+            );
+            return Err(ConvertToJpegError::InputDirectoryInvalid(err));
+        }
+    };
 
-    for path in paths {
-        println!("{}", path.unwrap().path().display());
+    Ok(paths)
+}
+
+fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
+    for result in paths {
+        let dir_entry = match result {
+            Ok(dir) => dir,
+            Err(err) => {
+                // TODO: Add logging for each dir entry error
+                println!("Error with a dir entry: {}", err);
+                continue;
+            }
+        };
+
+        let path_str = match dir_entry.path().into_os_string().into_string() {
+            Ok(path_str) => path_str,
+            Err(_) => {
+                println!("Error while converting dir entry into a string");
+                continue;
+            }
+        };
+        println!("path_str = {}", path_str);
+
+        // Create an image decoder from the file opened at path_str
+        let img_reader = match ImageReader::open(path_str) {
+            Ok(res) => res,
+            Err(err) => {
+                // TODO: Add logging for ImageReader errors
+                println!("Error while opening and an ImageReader: {}", err);
+                continue;
+            }
+        };
+
+        // Decode img from image_reader
+        let img: DynamicImage = match img_reader.decode() {
+            Ok(res) => res.into(),
+            Err(err) => {
+                // TODO: Add logging for image decoding errors
+                println!("Error while decoding to DynamicImage{}", err);
+                continue;
+            }
+        };
+
+        let img = img.into_rgb8();
+
+        // Change the file extension to .jpeg
+        let out_file = dir_entry.file_name();
+        let mut out_file: OsString = match Path::new(&out_file).file_stem() {
+            Some(out_file) => out_file.into(),
+            None => {
+                println!("Error while extracting the file_stem()");
+                continue;
+            }
+        };
+        out_file.push(".jpeg");
+
+        // Combine the output directory with the new filename
+        let out_dir = Path::new(&out_dir);
+        let out_path = out_dir.join(out_file);
+
+        let out_path: String = match out_path.into_os_string().into_string() {
+            Ok(out_path) => out_path,
+            Err(_) => {
+                println!("Could not convert os_string to string");
+                continue;
+            }
+        };
+        println!("out_path: {}", out_path);
+
+        let out_file = match File::create(out_path) {
+            Ok(out_file) => out_file,
+            Err(err) => {
+                println!("{}", err);
+                // TODO: Handle file creation errors
+                continue;
+            }
+        };
+
+        // Create a BufWriter
+        let ref mut file_writer = BufWriter::new(out_file);
+
+        // Create a JPEG decoder
+        let mut img_encoder = JpegEncoder::new(file_writer);
+        // Encode image to JPEG and handle encode errors
+        match img_encoder.encode(
+            &img,
+            img.dimensions().0,
+            img.dimensions().1,
+            ColorType::Rgb8.into(),
+        ) {
+            Ok(()) => (),
+            Err(err) => {
+                println!("{}", err);
+                continue;
+            }
+        };
     }
 }
