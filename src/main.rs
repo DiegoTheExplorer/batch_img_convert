@@ -4,15 +4,18 @@
 use native_dialog::FileDialog;
 use std::{
     error::Error,
+    f32,
     ffi::OsString,
     fmt,
-    fs::{read_dir, File, ReadDir},
+    fs::{read_dir, DirEntry, File},
     io::{BufReader, BufWriter},
     path::Path,
+    sync::{Arc, Mutex, Weak},
+    thread,
 };
 slint::include_modules!();
 use image::{codecs::jpeg::JpegEncoder, ColorType, DynamicImage, ImageReader};
-use slint::{ComponentHandle, Weak};
+use slint::ComponentHandle;
 
 #[derive(Debug)]
 enum ConvertToJpegError {
@@ -30,11 +33,18 @@ impl fmt::Display for ConvertToJpegError {
 impl std::error::Error for ConvertToJpegError {}
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let ui = AppWindow::new()?;
-    let ui_handle: Weak<AppWindow> = ui.as_weak();
+    // HACK:
+    // I'm not sure if this is best practice to be
+    // able to reference ui multiple times
+    let ui = Arc::new(AppWindow::new()?);
+    let ui_handle: Weak<AppWindow> = Arc::downgrade(&ui);
 
+    let ui_handle_dir = ui_handle.clone();
     ui.on_select_dir(move |target_text: i32| {
-        let ui: AppWindow = ui_handle.unwrap();
+        let ui: Arc<AppWindow> = match ui_handle_dir.upgrade() {
+            Some(ui) => ui,
+            None => return,
+        };
 
         let path = FileDialog::new()
             .set_location("~")
@@ -55,20 +65,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    let ui_handle_jpeg = ui_handle.clone();
     ui.on_to_jpeg(
         move |inp_dir: slint::SharedString, out_dir: slint::SharedString| {
+            let ui: Arc<AppWindow> = match ui_handle_jpeg.upgrade() {
+                Some(ui) => ui,
+                None => return,
+            };
             println!("Input Directory: {}", inp_dir);
             println!("Output Directory: {}", out_dir);
 
-            let paths = match get_files_paths(inp_dir.to_string()) {
-                Ok(paths) => paths,
-                Err(_) => {
-                    // TODO: Add gui output for the io error
-                    return;
-                }
-            };
+            thread::spawn(move || {
+                let paths = match get_files_paths(inp_dir.to_string()) {
+                    Ok(paths) => paths,
+                    Err(_) => {
+                        // TODO: Add gui output for the io error
+                        return;
+                    }
+                };
 
-            convert_imgs_to_jpeg(paths, out_dir.to_string());
+                convert_imgs_to_jpeg(paths, out_dir.to_string(), ui);
+            });
         },
     );
     ui.run()?;
@@ -76,7 +93,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_files_paths(dir: String) -> Result<ReadDir, crate::ConvertToJpegError> {
+fn get_files_paths(dir: String) -> Result<Vec<DirEntry>, crate::ConvertToJpegError> {
     let paths = match read_dir(dir) {
         Ok(paths) => paths,
         Err(err) => {
@@ -90,11 +107,24 @@ fn get_files_paths(dir: String) -> Result<ReadDir, crate::ConvertToJpegError> {
         }
     };
 
-    Ok(paths)
+    let mut path_vec: Vec<DirEntry> = Vec::new();
+    for dir_entry in paths {
+        match dir_entry {
+            Ok(dir_entry) => path_vec.push(dir_entry),
+            Err(err) => eprint!("Error pushing to dir_entry vector: {}", err),
+        };
+    }
+
+    Ok(path_vec)
 }
 
-fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
-    for result in paths {
+fn convert_imgs_to_jpeg(paths: Vec<DirEntry>, out_dir: String, ui: Arc<AppWindow>) {
+    let mut prog_counter: f32 = 0.0;
+    let dir_entry_count: f32 = paths.len() as f32;
+    let mut prog_percent: f32;
+
+    for dir_entry in paths {
+        /*
         let dir_entry = match result {
             Ok(dir) => dir,
             Err(err) => {
@@ -103,6 +133,7 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
                 continue;
             }
         };
+        */
 
         let path_str = match dir_entry.path().into_os_string().into_string() {
             Ok(path_str) => path_str,
@@ -192,5 +223,8 @@ fn convert_imgs_to_jpeg(paths: ReadDir, out_dir: String) {
                 continue;
             }
         };
+
+        prog_counter = prog_counter + 1.0;
+        prog_percent = prog_counter / dir_entry_count;
     }
 }
