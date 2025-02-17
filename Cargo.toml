@@ -11,5 +11,8 @@ native-dialog = "0.7.0"
 slint = "1.7.2"
 turbojpeg = "1.1.1"
 
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]
+
 [build-dependencies]
 slint-build = "1.7.2"

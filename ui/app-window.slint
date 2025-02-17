@@ -1,43 +1,63 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, VerticalBox, ProgressIndicator } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     // Variables shared between front and back end
     in-out property <string> inp_dir;
     in-out property <string> out_dir;
+    in-out property <float> conv_progress;
+    in-out property <string> status_text;
+    in-out property <color> status_text_color: Colors.orange;
+    in-out property <image> title_bar_icon: @image-url("./imgs/chowchowhead.png");
 
     // Backend function calls
     callback select-dir(int);
     callback to-jpeg(string, string);
+    width: 300px;
+    height: 400px;
+    title: "AnyImgToJpg";
+    icon: @image-url("./imgs/chowchowhead.png");
+
 
     // GUI markup
     VerticalBox {
         Text {
-            text: "Current input folder: \{root.inp_dir}";
+            text: "Current input folder: \n\{root.inp_dir}";
         }
-
         Button {
+            width: 150px;
+            height: 25px;
             text: "Select input folder";
             clicked => {
                 root.select-dir(0);
             }
         }
-
         Text {
-            text: "Current output folder: \{root.out_dir}";
+            text: "Current output folder: \n\{root.out_dir}";
         }
-
         Button {
+            width: 150px;
+            height: 25px;
             text: "Select output folder";
             clicked => {
                 root.select-dir(1);
             }
         }
-
         Button {
+            width: 150px;
+            height: 25px;
             text: "Convert images to jpeg";
             clicked => {
                 root.to-jpeg(inp_dir, out_dir);
             }
+        }
+        ProgressIndicator {
+            width: 150px;
+            height: 25px;
+            progress: root.conv_progress;
+        }
+        Text {
+            text: "Status: \{root.status_text}";
+            color: root.status_text_color;
         }
     }
 }
