@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     progress += 1.0;
                     let completion = progress / total_files;
                     let ui_copy = prog_bar_handle.clone();
-                    slint::invoke_from_event_loop(move || {
+                    let _set_status_res = match slint::invoke_from_event_loop(move || {
                         let ui = ui_copy.unwrap();
                         ui.set_conv_progress(completion);
                         if completion >= 1.0 {
@@ -128,7 +128,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 alpha: 1.,
                             }));
                         }
-                    });
+                    }) {
+                        Ok(_set_status_res) => _set_status_res,
+                        Err(err) => {
+                            println!("Error in updating the convertion progress bar");
+                            println!("{}", err);
+                        }
+                    };
                 }
             });
         },
@@ -177,7 +183,14 @@ fn convert_img_to_jpeg(dir_entry: DirEntry, out_dir: String) {
     // does not match the file type
     let img_reader: ImageReader<BufReader<File>> = match img_reader.with_guessed_format() {
         Ok(img_reader) => img_reader,
-        Err(_) => return,
+        Err(err) => {
+            println!(
+                "Error: Image file extension does not match image encoding format\n
+                and unable to identify format from contents"
+            );
+            println!("{}", err);
+            return;
+        }
     };
 
     // Decode img from image_reader

@@ -20,9 +20,6 @@ export component AppWindow inherits Window {
 
     // GUI markup
     VerticalBox {
-        Text {
-            text: "Current input folder: \n\{root.inp_dir}";
-        }
         Button {
             width: 150px;
             height: 25px;
@@ -32,7 +29,7 @@ export component AppWindow inherits Window {
             }
         }
         Text {
-            text: "Current output folder: \n\{root.out_dir}";
+            text: "Current input folder: \n\{root.inp_dir}";
         }
         Button {
             width: 150px;
@@ -41,6 +38,9 @@ export component AppWindow inherits Window {
             clicked => {
                 root.select-dir(1);
             }
+        }
+        Text {
+            text: "Current output folder: \n\{root.out_dir}";
         }
         Button {
             width: 150px;
